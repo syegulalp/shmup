@@ -1,0 +1,5 @@
+**/.venv*
+build
+deploy*
+model*
+**/*.egg-info
