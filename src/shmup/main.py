@@ -5,6 +5,7 @@ pyglet.options.debug_gl=False
 pyglet.options.vsync=False
 
 import weakref
+import gc
 
 from math import radians, degrees, floor, ceil, sin, cos
 
@@ -60,7 +61,7 @@ class Figure:
             (0,1,1,1),
         )
 
-    scales=[.25,.33,.5,.66,.75,.99]
+    scales=[.25,.33,.5,.66,.75,1]
     
     pos:Vec3
     matrix:Mat4
@@ -76,7 +77,9 @@ class Figure:
     def move(self):
         self.pos += self._move
 
-    def set_pos(self, pos:Vec3):
+    def set_pos(self, pos:Vec3):        
+        # Remove old position if it exists
+        game.space.pop((round(self.pos.x), 0, round(self.pos.z)),None)
         self.pos = pos
         self.matrix = Mat4.from_translation(Vec3(pos.x, self._size/2, pos.z))
         game.space[(pos.x, 0, pos.z)]=self
@@ -96,7 +99,7 @@ class Figure:
     def set_random_position(self):
         while True: 
             x, z = random.randint(-24,25), random.randint(-24,25)
-            if abs(x-camera.position.x)+abs(z-camera.position.y)<8:
+            if abs(x-camera.position.x)+abs(z-camera.position.y)<2:
                 continue
             if game.space.get((x, 0, z), None) is None:
                 self.set_pos(Vec3(x, self._size/2, z))
@@ -108,6 +111,7 @@ class Cube(pyglet.model.Cube, Figure):
         color = random.choice(self.colors)
         super().__init__(size, size, size, color=color, batch=window.batch, group=window.group)
         self._size = size
+        self.pos = Vec3()
     
     def set_pos(self, pos:Vec3):
         super().set_pos(pos)
@@ -115,10 +119,11 @@ class Cube(pyglet.model.Cube, Figure):
 
     def collide(self, other:Figure):
         pos:Vec3 = other.pos
+        half = other._halfsize
         return (
-            self._min.x <= pos.x <= self._max.x and
-            self._min.y <= pos.y <= self._max.y and
-            self._min.z <= pos.z <= self._max.z
+            self._min.x-half <= pos.x <= self._max.x+half and
+            self._min.y-half <= pos.y <= self._max.y+half and
+            self._min.z-half <= pos.z <= self._max.z+half
             )
     
 class Shot(pyglet.model.Cube, Figure):
@@ -134,16 +139,18 @@ class Shot(pyglet.model.Cube, Figure):
             ).rotate(radians(45),Vec3(0,0,1)) 
         self._timer = 200
         self.matrix = Mat4().translate(self.pos) @ self._rotation
+        self._halfsize = .05
 
 class Sphere(pyglet.model.Sphere, Figure):
     def __init__(self, *a, **ka):
         size = random.choice(self.scales)
         color = random.choice(self.colors)
         super().__init__(size, color=color, batch=window.batch, group=window.group)
-        self._size = size        
+        self._size = size
+        self.pos = Vec3()
 
     def collide(self, other:Figure):
-        return self.pos.distance(other.pos)<self._halfsize
+        return self.pos.distance(other.pos)<(self._halfsize+other._size/2)
 
 class Game:
     def __init__(self, window:Window, camera:FPSCamera):
@@ -178,11 +185,12 @@ class Game:
 
     def do_shots(self):
         y:Figure
+        gc.disable()
         if self.shots:
             new_shots = []
             for shot in self.shots:
                 for _ in range(0,2):
-                    if shot.pos.y<-1:
+                    if shot.pos.y<0:
                         shot._timer=None
                         sounds.dud.play()
                         break
@@ -236,6 +244,7 @@ class Game:
                         break
             n+=1
         camera.position = pos
+        gc.enable()
 
     def ground_check(self):
         if self.camera.position.y<.5:
@@ -616,7 +625,7 @@ def main():
         controller.open()
         controller.push_handlers(camera)
 
-    import gc
+    
     gc.freeze()
 
     game.start()
