@@ -93,6 +93,15 @@ class Figure:
     def delete(self):
         self._vlist.delete() # type: ignore
 
+    def set_random_position(self):
+        while True: 
+            x, z = random.randint(-24,25), random.randint(-24,25)
+            if abs(x-camera.position.x)+abs(z-camera.position.y)<8:
+                continue
+            if game.space.get((x, 0, z), None) is None:
+                self.set_pos(Vec3(x, self._size/2, z))
+                break
+
 class Cube(pyglet.model.Cube, Figure):
     def __init__(self, *a, **ka):
         size = random.choice(self.scales)
@@ -117,13 +126,13 @@ class Shot(pyglet.model.Cube, Figure):
         super().__init__(.05, .05, 1, (255,255,255,255), batch=window.batch, group=window.group)
         self._size = .1
         self.pos = Vec3(*camera.position) * Vec3(1,0.75,1)
-        self._move = camera._forward*.1
+        self._move = camera._forward*.25
         self._rotation = Mat4().rotate(
                 radians(camera.yaw-90),Vec3(0,-1,0)
             ).rotate(
                 radians(camera.pitch), Vec3(-1,0,0)
             ).rotate(radians(45),Vec3(0,0,1)) 
-        self._timer = 600
+        self._timer = 200
         self.matrix = Mat4().translate(self.pos) @ self._rotation
 
 class Sphere(pyglet.model.Sphere, Figure):
@@ -131,7 +140,7 @@ class Sphere(pyglet.model.Sphere, Figure):
         size = random.choice(self.scales)
         color = random.choice(self.colors)
         super().__init__(size, color=color, batch=window.batch, group=window.group)
-        self._size = size
+        self._size = size        
 
     def collide(self, other:Figure):
         return self.pos.distance(other.pos)<self._halfsize
@@ -157,13 +166,7 @@ class Game:
             self.items.append(item)
 
         for item in self.items:
-            while True:
-                x, z = random.randint(-24,25), random.randint(-24,25)
-                if abs(x)+abs(z)<4:
-                    continue
-                if self.space.get((x, 0, z), None) is None:
-                    item.set_pos(Vec3(x, item._size/2, z))
-                    break
+            item.set_random_position()
 
         self.floor = pyglet.model.Cube(
                 50,1,50,
@@ -178,7 +181,7 @@ class Game:
         if self.shots:
             new_shots = []
             for shot in self.shots:
-                for _ in range(0,5):
+                for _ in range(0,2):
                     if shot.pos.y<-1:
                         shot._timer=None
                         sounds.dud.play()
@@ -191,6 +194,9 @@ class Game:
                                 self.space.pop((lx, ly, lz))
                                 shot._timer=None
                                 random.choice(sounds.explosion).play()
+                                new = y.__class__()
+                                new.set_random_position()
+                                self.items.append(new)
                                 break
                             
                     if shot._timer:
@@ -579,10 +585,6 @@ class FPSDisplay:
         self.counter = 0
 
     def update(self, t) -> None:
-        """Records a new data point at the current time.
-
-        This method is called automatically when the window buffer is flipped.
-        """
         self.counter += 1
         self._delta_times.append(t)
 
@@ -591,7 +593,6 @@ class FPSDisplay:
             self.label.text = f'{self._label}: {self._mean(self._delta_times):.7f}'
 
     def draw(self) -> None:
-        """Draw the label."""
         self.label.draw()
 
 
