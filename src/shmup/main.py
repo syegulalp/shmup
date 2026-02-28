@@ -61,29 +61,70 @@ class Figure:
         )
 
     scales=[.25,.33,.5,.66,.75,.99]
+    
     pos:Vec3
+    matrix:Mat4
+
+    _rotation:Mat4
+    _move:Vec3
+    _size:float
+    _vlist:object
+
+    def update(self):
+        self.matrix = Mat4().translate(self.pos) @ self._rotation
+
+    def move(self):
+        self.pos += self._move
+
+    def set_pos(self, pos:Vec3):
+        self.pos = pos
+        self.matrix = Mat4.from_translation(Vec3(pos.x, self._size/2, pos.z))
+        game.space[(pos.x, 0, pos.z)]=self
+        self._halfsize = self._size/2     
+
+    def set_min_max(self):
+        pos=self.pos
+        self._min = Vec3(pos.x-self._halfsize,pos.y-self._halfsize,pos.z-self._halfsize)
+        self._max = Vec3(pos.x+self._halfsize,pos.y+self._halfsize,pos.z+self._halfsize)
+
+    def collide(self, other:Figure):
+        raise NotImplementedError
+    
+    def delete(self):
+        self._vlist.delete() # type: ignore
 
 class Cube(pyglet.model.Cube, Figure):
     def __init__(self, *a, **ka):
         size = random.choice(self.scales)
         color = random.choice(self.colors)
         super().__init__(size, size, size, color=color, batch=window.batch, group=window.group)
-        
         self._size = size
+    
+    def set_pos(self, pos:Vec3):
+        super().set_pos(pos)
+        self.set_min_max()
 
-class Shot(pyglet.model.Cube):
+    def collide(self, other:Figure):
+        pos:Vec3 = other.pos
+        return (
+            self._min.x <= pos.x <= self._max.x and
+            self._min.y <= pos.y <= self._max.y and
+            self._min.z <= pos.z <= self._max.z
+            )
+    
+class Shot(pyglet.model.Cube, Figure):
     def __init__(self, *a, camera:FPSCamera, **ka):
         super().__init__(.05, .05, 1, (255,255,255,255), batch=window.batch, group=window.group)
         self._size = .1
-        self.position = Vec3(*camera.position) * Vec3(1,0.75,1)
+        self.pos = Vec3(*camera.position) * Vec3(1,0.75,1)
         self._move = camera._forward*.1
-        self.rotation = Mat4().rotate(
+        self._rotation = Mat4().rotate(
                 radians(camera.yaw-90),Vec3(0,-1,0)
             ).rotate(
                 radians(camera.pitch), Vec3(-1,0,0)
             ).rotate(radians(45),Vec3(0,0,1)) 
         self._timer = 600
-        self.matrix = Mat4().translate(self.position) @ self.rotation
+        self.matrix = Mat4().translate(self.pos) @ self._rotation
 
 class Sphere(pyglet.model.Sphere, Figure):
     def __init__(self, *a, **ka):
@@ -91,6 +132,9 @@ class Sphere(pyglet.model.Sphere, Figure):
         color = random.choice(self.colors)
         super().__init__(size, color=color, batch=window.batch, group=window.group)
         self._size = size
+
+    def collide(self, other:Figure):
+        return self.pos.distance(other.pos)<self._halfsize
 
 class Game:
     def __init__(self, window:Window, camera:FPSCamera):
@@ -118,9 +162,7 @@ class Game:
                 if abs(x)+abs(z)<4:
                     continue
                 if self.space.get((x, 0, z), None) is None:
-                    item.matrix = Mat4.from_translation(Vec3(x, item._size/2, z))
-                    self.space[(x, 0, z)]=item
-                    item.pos = Vec3(x,item._size/2,z)
+                    item.set_pos(Vec3(x, item._size/2, z))
                     break
 
         self.floor = pyglet.model.Cube(
@@ -132,37 +174,34 @@ class Game:
         self.camera.game = self
 
     def do_shots(self):
-        y:Cube|Sphere
-        # a=b=0
-        
+        y:Figure
         if self.shots:
             new_shots = []
             for shot in self.shots:
                 for _ in range(0,5):
-                    if shot.position.y<-1:
+                    if shot.pos.y<-1:
                         shot._timer=None
                         sounds.dud.play()
                         break
                     for a,b,c in rrr:
-                        lx, ly, lz=round(shot.position.x)+a, round(shot.position.y)+b, round(shot.position.z)+c
+                        lx, ly, lz=round(shot.pos.x)+a, round(shot.pos.y)+b, round(shot.pos.z)+c
                         if y:=self.space.get((lx, ly, lz), None):  # type: ignore
-                            dist = shot.position.distance(y.pos)
-                            if abs(dist)< y._size-shot._size:
-                                y._vlist.delete()
+                            if y.collide(shot):
+                                y.delete()
                                 self.space.pop((lx, ly, lz))
                                 shot._timer=None
                                 random.choice(sounds.explosion).play()
                                 break
                             
                     if shot._timer:
-                        shot.position += shot._move
+                        shot.move()
                         shot._timer -=1
                         if not shot._timer:
                             shot._timer = None
                             break
                 
                 if shot._timer:
-                    shot.matrix = Mat4().translate(shot.position) @ shot.rotation
+                    shot.update()
                     new_shots.append(shot)
                 else:
                     shot._vlist.delete()
@@ -558,9 +597,10 @@ class FPSDisplay:
 
 window:Window
 camera:FPSCamera
+game:Game
 
 def main():
-    global window, camera, fps, fps2, fps3
+    global window, camera, fps, fps2, fps3, game
 
     window = Window()
     camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
