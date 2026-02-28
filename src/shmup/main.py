@@ -16,27 +16,37 @@ from itertools import product
 
 from pyglet import resource
 import os
-resource.path=[f"{os.getcwd()}/data/audio"]
+cwd = f"{os.getcwd()}/data"
+resource.path=[f"{cwd}/audio", f"{cwd}/fonts"]
 resource.reindex()
 
-class _Source(pyglet.media.StaticSource):
-    player:pyglet.media.Player|None = None
-    def trigger(self):
-        if self.player and self.player.playing:
+resource.add_font("PrStart.ttf")
+
+
+class Sound:
+    def __init__(self, filename:str):
+        self.sound = resource.media(filename, False)
+        self.player:pyglet.media.Player|None = None
+    
+    def play(self):
+        if not self.player:
+            self.player = pyglet.media.Player()
+        if self.player.playing:                
             self.player.pause()
-        self.player = self.play()
+            self.player.seek(0)
+        else:
+            self.player.queue(self.sound)
+        self.player.play()        
 
-def make_sound(rez)->_Source:
-    sound = resource.media(rez, False)
-    sound.__class__ = _Source
-    return sound # type: ignore
+zap = Sound("zap.wav")
+explosion = [Sound(f"explosion ({n}).wav") for n in range(1,6)]
+oof = Sound("oof.wav")
+dud = Sound("dud.wav")
 
-zap = make_sound("zap.wav")
-explosion = [make_sound(f"explosion ({n}).wav") for n in range(1,6)]
-oof = make_sound("oof.wav")
-dud = make_sound("dud.wav")
+
 
 r = (-1,0,1)
+s = (0, 1)
 
 import random
 
@@ -59,8 +69,6 @@ class Cube(pyglet.model.Cube, Figure):
         color = random.choice(self.colors)
         super().__init__(size, size, size, color=color, batch=window.batch)
         self._size = size
-        # self.matrix @= Mat4.from_rotation(radians(random.randint(0,45)),Vec3(0,1,0)) 
-        # self.matrix -= Mat4.from_translation(Vec3(0,(1-size)/2,0))
 
 class Shot(pyglet.model.Cube):
     def __init__(self, *a, camera:FPSCamera, **ka):
@@ -75,8 +83,6 @@ class Shot(pyglet.model.Cube):
             ).rotate(radians(45),Vec3(0,0,1)) 
         self._timer = 600
         self.matrix = Mat4().translate(self.position) @ self.rotation
-        # self.position+=self._move
-
 
 class Sphere(pyglet.model.Sphere, Figure):
     def __init__(self, *a, **ka):
@@ -84,7 +90,6 @@ class Sphere(pyglet.model.Sphere, Figure):
         color = random.choice(self.colors)
         super().__init__(size, color=color, batch=window.batch)
         self._size = size
-        # self.matrix -= Mat4.from_translation(Vec3(0,(1-size)/2,0))
 
 class Game:
     def __init__(self, window:Window, camera:FPSCamera):
@@ -126,23 +131,23 @@ class Game:
 
     def do_shots(self):
         y:Cube|Sphere
-        a=b=c=0
+        # a=b=0
         new_shots = []
         for shot in self.shots:
             for _ in range(0,5):
                 if shot.position.y<-1:
                     shot._timer=None
-                    dud.trigger()
+                    dud.play()
                     break
                 for a,b in product(r,r):
-                    lx, ly, lz=round(shot.position.x)+a, round(shot.position.y)+b, round(shot.position.z)+c
+                    lx, ly, lz=round(shot.position.x)+a, round(shot.position.y)+b, round(shot.position.z)
                     if y:=self.space.get((lx, ly, lz), None):  # type: ignore
                         dist = shot.position.distance(y.pos)
                         if abs(dist)< y._size-shot._size:
                             y._vlist.delete()
                             self.space.pop((lx, ly, lz))
                             shot._timer=None
-                            random.choice(explosion).trigger()
+                            random.choice(explosion).play()
                             break
                         
                 if shot._timer:
@@ -164,7 +169,7 @@ class Game:
             new_shot = Shot(camera=self.camera)
             self.fire_timer = 4
             self.shots.append(new_shot)
-            zap.trigger()
+            zap.play()
 
         if self.fire_timer:
             self.fire_timer-=1
@@ -174,12 +179,12 @@ class Game:
         n=0
         while n<10:
             pos += movement
-            for a,b,c in product(r,r,r):
-                if i:=self.space.get((round(pos.x)+a, round(pos.y)+b, round(pos.z)+c),None):
+            for a,b in product(s,s):
+                if i:=self.space.get((round(pos.x)+a, round(pos.y)+b, round(pos.z)),None):
                     if i.pos.distance(pos)<i._size:
                         pos -= movement * (n+5)
                         n=10
-                        oof.trigger()
+                        oof.play()
                         break
             n+=1
         camera.position = pos
@@ -214,23 +219,19 @@ class FPSCamera:
 
         self.game:Game
 
-        # Frustum
         self._near = near
         self._far = far
         self._field_of_view = field_of_view
 
-        # Camera speed
-        self.walk_speed = 3.0  # Speed of translation
-        self.look_speed = 50.0  # Speed of rotation
+        self.walk_speed = 3.0
+        self.look_speed = 50.0
 
-        # Pitch, yaw in degrees. We update the camera based on these values.
         self._pitch = 0.0
         self._yaw = -90.0
         self._roll = 0.0
         self._elevation = 0.0
         self._forward = Vec3()
 
-        # Input from keyboard and controller
         self.keyboard_move = Vec2()
         self.mouse_look = Vec2()
         self.keyboard_look = Vec2()
@@ -242,8 +243,7 @@ class FPSCamera:
         self._time = 0
         self._t2 = 0
 
-        # Keyboard input maps
-        self.input_map = {  # Look up direction based on key symbol
+        self.input_map = {
             _key.W: "forward",
             _key.S: "backward",
             _key.A: "left",
@@ -253,18 +253,14 @@ class FPSCamera:
             _key.LEFT: "look_left",
             _key.RIGHT: "look_right",
         }
-        # Stores the direction string and the state of the direction
         self.inputs = {direction: False for direction in self.input_map.values()}
 
-        # Make the camera point to the initial target.
-        # We point it down the negative z-axis if no target is provided.
         if target is None:
             target = position + Vec3(0.0, 0.0, -1.0)
 
         self.teleport(position, target)
 
         window.push_handlers(self)
-        # self.on_refresh(0.0)
 
     @property
     def pitch(self) -> float:
@@ -457,7 +453,13 @@ class Window(pyglet.window.Window):
             sample_buffers=1, samples=4, depth_size=16,
             double_buffer=True
         )
+        
         super().__init__(*a, resizable=True, config=config, **ka)
+        self.set_location(
+        self.screen.width //2 - self.width //2,
+        self.screen.height //2 - self.height //2,
+        )
+        self.flip()
         
         self.view: Mat4
 
@@ -467,7 +469,13 @@ class Window(pyglet.window.Window):
         self.projection_2d: Mat4
         self.projection_3d: Mat4
 
-        self.label = pyglet.text.Label("Hello World", x=self.width-10, y=10, font_size=25, color=(210, 210, 210, 255), anchor_x='right', batch=self.batch2d)
+        pyglet.font.load("Press Start")
+
+        self.label = pyglet.text.Label("Hello World", 
+                                       font_name="Press Start",
+                                       x=self.width//2, y=self.height-24, font_size=16, color=(210, 210, 210, 255), anchor_x='center',
+                                       anchor_y='top',
+                                       batch=self.batch2d)
 
     def on_draw(self, *a):
         self.clear()
@@ -489,6 +497,7 @@ camera:FPSCamera
 def main():
     global window, camera
     window = Window()
+    
     camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
     game = Game(window,camera)
     fps = pyglet.window.FPSDisplay(window=window)
@@ -498,6 +507,8 @@ def main():
         controller.open()
         controller.push_handlers(camera)
 
+    window.set_visible(True)
+    window.flip()
     pyglet.app.run()
 
 if __name__ == "__main__":
