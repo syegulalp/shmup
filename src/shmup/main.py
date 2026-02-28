@@ -268,15 +268,6 @@ class FPSCamera:
 
     @property
     def pitch(self) -> float:
-        """Get or set the pitch of the camera in degrees.
-
-        Pitch is the rotation around the local x-axis meaning
-        that a positive pitch will look up and a negative pitch
-        will look down.
-
-        These values are clamped between -85 and 85 degrees to
-        mimic the behavior of most first-person cameras.
-        """
         return self._pitch
     
     @pitch.setter
@@ -285,12 +276,6 @@ class FPSCamera:
 
     @property
     def yaw(self) -> float:
-        """The yaw of the camera in degrees.
-
-        This is the local rotation around the global y-axis
-        meaning that a positive yaw will look to the right
-        and a negative yaw will look to the left.
-        """
         return self._yaw
 
     @yaw.setter
@@ -299,10 +284,6 @@ class FPSCamera:
 
     @property
     def field_of_view(self) -> float:
-        """Get or set the field of view of the camera in degrees.
-
-        Setting the value will update the projection matrix.
-        """
         return self._field_of_view
 
     @field_of_view.setter
@@ -312,10 +293,6 @@ class FPSCamera:
 
     @property
     def near(self) -> float:
-        """Get or set the near plane of the camera.
-
-        Setting the value will update the projection matrix.
-        """
         return self._near
 
     @near.setter
@@ -325,10 +302,6 @@ class FPSCamera:
 
     @property
     def far(self) -> float:
-        """Get or set the far plane of the camera.
-
-        Setting the value will update the projection matrix.
-        """
         return self._far
 
     @far.setter
@@ -337,50 +310,37 @@ class FPSCamera:
         self._update_projection()
 
     def on_resize(self, width: int, height: int) -> bool:
-        """Update the viewport and projection matrix on window resize."""
         self._window.viewport = (0, 0, *self._window.get_framebuffer_size())
         self._update_projection()
         return pyglet.event.EVENT_HANDLED
 
     def on_refresh(self, delta_time: float) -> None:
-        """Called before the window content is drawn.
-
-        Runs every frame applying the camera movement.
-        """
-
         self.game.do_shots()
 
         walk_speed = self.walk_speed * delta_time
         look_speed = self.look_speed * delta_time
 
-        # Rotation - mouse
         if self.mouse_look:
             self.yaw += self.mouse_look.x * look_speed
             self.pitch += self.mouse_look.y * look_speed
-            # Reset the relative mouse movement when done.
             self.mouse_look = Vec2()
 
         if self.keyboard_look:
             self.yaw += self.keyboard_look.x * look_speed
             self.pitch += self.keyboard_look.y * look_speed
 
-        # Rotation - controller
         if self.controller_look:
             self.yaw += self.controller_look.x * look_speed * 20
             self.pitch += self.controller_look.y * look_speed * 20
 
-        # Calculate the local forward, right and up vectors from pitch and yaw
-        # forward = Vec3.from_pitch_yaw(radians(self.pitch), radians(self.yaw))
         forward = Vec3.from_pitch_yaw(radians(self.pitch), radians(self.yaw))
         right = forward.cross(self.UP).normalize()
         up = right.cross(forward).normalize()
         translation = Vec3()
 
-        # Translation - keyboard
         if self.keyboard_move:
             translation += forward * self.keyboard_move.y + right * self.keyboard_move.x
 
-        # Translation - controller
         if self.controller_move:
             translation += forward * self.controller_move.y + right * self.controller_move.x
 
@@ -388,10 +348,8 @@ class FPSCamera:
 
         if movement:
             self.game.do_collisions(movement)
-
         self.game.ground_check()
 
-        # Look forward from the new position
         self._window.view = Mat4.look_at(self.position, self.position + forward, self.UP)
         self._forward = forward
         self._right = right
@@ -399,16 +357,10 @@ class FPSCamera:
 
         
     def on_deactivate(self) -> None:
-        """Reset the movement states when the window loses focus."""
         self.controller_look = Vec2()
         self.controller_move = Vec2()
 
     def teleport(self, position: Vec3, target: Vec3 | None = None) -> None:
-        """Teleport the camera to a new position.
-
-        An optional new view target can be provided. If no target is
-        provided, the camera will look in the same direction as before.
-        """
         if target is not None:
             direction = (target - self.position).normalize()
             pitch, yaw = direction.get_pitch_yaw()
@@ -417,17 +369,13 @@ class FPSCamera:
 
         self.position = position
 
-    # --- Mouse input ---
-
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
-        """Read the mouse input and update the camera's yaw and pitch."""
         if not self._exclusive_mouse:
             return
 
         self.mouse_look = Vec2(dx, dy)
 
     def on_mouse_press(self, x: int, y: int, button, modifiers) -> None:
-        """Capture the mouse input when the window is clicked."""
         if not self._exclusive_mouse:
             self._exclusive_mouse = True
             self._window.set_exclusive_mouse(True)
@@ -437,10 +385,7 @@ class FPSCamera:
     def on_mouse_release(self, *a):
         self.game.firing = False
 
-    # --- Keyboard input ---
-
     def on_key_press(self, symbol: int, mod: int) -> bool:
-        """Handle keyboard input."""
         if direction := self.input_map.get(symbol):
             self.inputs[direction] = True
             forward, backward, left, right, look_up, look_down, look_left, look_right = self.inputs.values()
@@ -464,7 +409,6 @@ class FPSCamera:
         return False
 
     def on_key_release(self, symbol: int, mod: int) -> bool:
-        """Handle keyboard input release."""
         if direction := self.input_map.get(symbol):
             self.inputs[direction] = False
             forward, backward, left, right, look_up, look_down, look_left, look_right = self.inputs.values()
@@ -478,22 +422,13 @@ class FPSCamera:
 
         return False
 
-    # --- Controller input ---
-
     def on_stick_motion(self, _controller, stick: str, vector: Vec2):
-        """Handle controller input.
-
-        The left stick controls the camera position, and the right stick
-        controls the camera rotation.
-        """
-        # Translation
         if stick == "leftstick":
             if vector.length() < self.dead_zone:
                 self.controller_move = Vec2()
             else:
                 self.controller_move = vector
 
-        # Camera rotation
         if stick == "rightstick":
             if vector.length() >= self.dead_zone:
                 self.controller_look = vector
@@ -501,16 +436,12 @@ class FPSCamera:
                 self.controller_look = Vec2()
 
     def on_trigger_motion(self, controller, trigger: str, value: float):
-        """Handle the controller trigger input."""
         if trigger == "lefttrigger":
             self._elevation = -value
         if trigger == "righttrigger":
             self._elevation = value
 
-    # -- Private methods --
-
     def _update_projection(self):
-        """Update the projection matrix"""
         self._window.projection_2d = Mat4.orthogonal_projection(0, window.width, 0, window.height, -1, 1)
         self._window.projection_3d = Mat4.perspective_projection(
             window.aspect_ratio,
@@ -552,23 +483,22 @@ class Window(pyglet.window.Window):
         self.projection=self.projection_2d
         self.batch2d.draw()
 
-
-window = Window()
-camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
-game = Game(window,camera)
-# FPSCamera.on_refresh(camera,0.0)
-
-fps = pyglet.window.FPSDisplay(window=window)
-
-# If a controller is connected, use it:
-if controllers := pyglet.input.get_controllers():
-    controller = controllers[0]
-    controller.open()
-    controller.push_handlers(camera)
+window:Window
+camera:FPSCamera
 
 def main():
+    global window, camera
+    window = Window()
+    camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
+    game = Game(window,camera)
+    fps = pyglet.window.FPSDisplay(window=window)
+
+    if controllers := pyglet.input.get_controllers():
+        controller = controllers[0]
+        controller.open()
+        controller.push_handlers(camera)
+
     pyglet.app.run()
 
 if __name__ == "__main__":
     main()
-
