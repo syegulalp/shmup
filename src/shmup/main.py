@@ -159,6 +159,7 @@ class Game:
 
         self.items = []
         self.shots = []
+        self.new_shots = []
         self.space = {}
 
         self.fire_timer = 0
@@ -187,7 +188,7 @@ class Game:
         y:Figure
         gc.disable()
         if self.shots:
-            new_shots = []
+            self.new_shots[:] = []
             for shot in self.shots:
                 for _ in range(0,2):
                     if shot.pos.y<0:
@@ -216,10 +217,11 @@ class Game:
                 
                 if shot._timer:
                     shot.update()
-                    new_shots.append(shot)
+                    self.new_shots.append(shot)
                 else:
                     shot._vlist.delete()
-            self.shots[:] = new_shots
+            self.shots[:] = self.new_shots
+            self.new_shots[:] = []
 
         if self.firing and self.fire_timer==0:
             new_shot = Shot(camera=self.camera)
@@ -624,7 +626,6 @@ def main():
         controller = controllers[0]
         controller.open()
         controller.push_handlers(camera)
-
     
     gc.freeze()
 
