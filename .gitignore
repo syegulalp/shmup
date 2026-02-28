@@ -3,3 +3,4 @@ build
 deploy*
 model*
 **/*.egg-info
+**/settings.json
