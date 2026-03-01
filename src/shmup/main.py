@@ -15,6 +15,11 @@ from pyglet.window import key as _key
 
 from time import perf_counter
 from itertools import product
+from collections import deque
+from typing import Callable
+from statistics import mean
+from time import monotonic
+
 
 from pyglet import resource
 import os
@@ -567,16 +572,19 @@ class Window(pyglet.window.Window):
 class FPSDisplay:
     # update_period = 0.25
     label: pyglet.text.Label
+    _time: float
+    _mean: Callable
+    _label: str
+    _delta_times: deque
 
-    def __init__(self, hook, method, color: tuple[int, int, int, int] = (127, 127, 127, 127, ),
-                 samples: int = 240, y=10, label="") -> None:
-        from collections import deque
-        from statistics import mean
-        from time import monotonic
-
-        from pyglet.text import Label
-        self._time = monotonic
+    @classmethod
+    def hook(cls, hook, color: tuple[int, int, int, int] = (127, 127, 127, 127, ),
+                 samples: int = 240, y=10, label="") :
+        
+        self = cls()
+        self._time = 0
         self._mean = mean
+        self._label =label
 
         def wrap(fn):
             def wrapper(*a, **ka):
@@ -586,14 +594,13 @@ class FPSDisplay:
                 return result
             return wrapper
         
-        hook2 = wrap(getattr(hook, method))
-        setattr(hook, method, hook2)
+        new_fn = wrap(hook)
 
-        self._label =label
-
-        self.label = Label('', x=10, y=y, font_size=24, weight='bold', color=color)
+        self.label = pyglet.text.Label('', x=10, y=y, font_size=24, weight='bold', color=color)
         self._delta_times = deque(maxlen=samples)
         self.counter = 0
+
+        return self, new_fn
 
     def update(self, t) -> None:
         self.counter += 1
@@ -618,9 +625,9 @@ def main():
     camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
     game = Game(window,camera)
 
-    fps = FPSDisplay(game,"do_collisions", label="Collisions")
-    fps2 = FPSDisplay(game, "do_shots", y=36, label="Shots")
-    fps3 = FPSDisplay(window, "on_draw", y=64, label="Draw time")
+    fps, game.do_collisions = FPSDisplay.hook(game.do_collisions, label="Collisions")
+    fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=36, label="Shots")
+    fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=64, label="Draw time")
 
     if controllers := pyglet.input.get_controllers():
         controller = controllers[0]
@@ -634,7 +641,7 @@ def main():
     window.set_visible(True)
     window.flip()
 
-    pyglet.app.run(1/60)
+    pyglet.app.run()
 
 if __name__ == "__main__":
     main()
