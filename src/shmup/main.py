@@ -227,6 +227,15 @@ class Game(GameMode):
             anchor_y='top',
             batch=self.window.batch2d
         )
+        
+        self.reticle = pyglet.shapes.Box(
+            self.window.width//2 - 64,
+            self.window.height//2 - 64,
+            128, 128, color=(255,255,255,64),
+            thickness=8,
+            batch=self.window.batch2d
+        )
+        
 
     def do_shots(self):
         y:Figure
