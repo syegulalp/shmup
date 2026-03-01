@@ -83,12 +83,12 @@ class Figure:
         self.pos += self._move
 
     def set_pos(self, pos:Vec3):        
-        # Remove old position if it exists
-        game.space.pop((round(self.pos.x), 0, round(self.pos.z)),None)
+        self.pop_space()
         self.pos = pos
         self.matrix = Mat4.from_translation(Vec3(pos.x, self._size/2, pos.z))
         game.space[(pos.x, 0, pos.z)]=self
-        self._halfsize = self._size/2     
+        self.set_min_max()
+        self._halfsize = self._size/2
 
     def set_min_max(self):
         pos=self.pos
@@ -98,7 +98,12 @@ class Figure:
     def collide(self, other:Figure):
         raise NotImplementedError
     
+    def pop_space(self):
+        game.space.pop(
+            (round(self.pos.x), round(self.pos.y), round(self.pos.z)), None
+        )
     def delete(self):
+        self.pop_space()
         self._vlist.delete() # type: ignore
 
     def set_random_position(self):
@@ -116,12 +121,9 @@ class Cube(pyglet.model.Cube, Figure):
         color = random.choice(self.colors)
         super().__init__(size, size, size, color=color, batch=window.batch, group=window.group)
         self._size = size
+        self._halfsize = size/2
         self.pos = Vec3()
     
-    def set_pos(self, pos:Vec3):
-        super().set_pos(pos)
-        self.set_min_max()
-
     def collide(self, other:Figure):
         pos:Vec3 = other.pos
         half = other._halfsize
@@ -152,6 +154,7 @@ class Sphere(pyglet.model.Sphere, Figure):
         color = random.choice(self.colors)
         super().__init__(size, color=color, batch=window.batch, group=window.group)
         self._size = size
+        self._halfsize = size/2
         self.pos = Vec3()
 
     def collide(self, other:Figure):
@@ -205,7 +208,7 @@ class Game:
                         if y:=self.space.get((lx, ly, lz), None):  # type: ignore
                             if y.collide(shot):
                                 y.delete()
-                                self.space.pop((lx, ly, lz))
+                                # self.space.pop((lx, ly, lz))
                                 shot._timer=None
                                 random.choice(sounds.explosion).play()
                                 new = y.__class__()
@@ -626,8 +629,8 @@ def main():
     game = Game(window,camera)
 
     fps, game.do_collisions = FPSDisplay.hook(game.do_collisions, label="Collisions")
-    fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=36, label="Shots")
-    fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=64, label="Draw time")
+    fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=40, label="Shots")
+    fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=72, label="Draw time")
 
     if controllers := pyglet.input.get_controllers():
         controller = controllers[0]
