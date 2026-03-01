@@ -286,22 +286,18 @@ class Game(GameMode):
             self.fire_timer-=1
 
     def do_collisions(self, movement:Vec3):
-        pos = self.camera.position
-        n=0
-        while n<10:
+        pos = Vec3(*self.camera.position)
+        for _ in range(10):
             pos += movement
             for a,b,c in rrr:
                 if i:=self.space.get((round(pos.x)+a, round(pos.y)+b, round(pos.z)+c),None):
                     if i.pos.distance(pos)<i._size:
-                        pos -= movement                     
-                        n=10
+                        pos -= movement
                         if self.oof_pos != pos:
                             sounds.oof.play()
                         self.oof_pos = Vec3(*pos)
-                        break
-            n+=1
-        self.camera.position = pos
-        
+                        return 
+            self.camera.position = pos
 
     def ground_check(self):
         if self.camera.position.y<.5:
@@ -614,7 +610,9 @@ class Window(pyglet.window.Window):
         self.view: Mat4
 
         self.view_2d = self.view        
-        self.group = pyglet.graphics.Group()
+        self.group = pyglet.graphics.Group(0)
+        self.group1 = pyglet.graphics.Group(1)
+
         self.batch = pyglet.graphics.Batch()
         self.batch2d = pyglet.graphics.Batch()
         self.projection_2d = Mat4.orthogonal_projection(0, self.width, 0, self.height, -1, 1)
@@ -667,12 +665,45 @@ class FPSDisplay:
     def draw(self) -> None:
         self.label.draw()
 
+class ClickLabel(pyglet.gui.WidgetBase):
+    click: Callable
+    def __init__(self, text, font_name, x, y, window, font_size=16, color=(255,255,255,255), anchor_x="center", anchor_y="center", click=None):
+        self.window=window
+        
+        self.label = pyglet.text.Label(text,font_name = font_name, font_size=font_size, color=color, x=x, y=y, batch=self.window.batch2d, group=self.window.group1, anchor_x="center", anchor_y="center", width=self.window.width, multiline=True, align="center")
+
+        print (self.label.content_width, self.label.content_height)
+        
+        super().__init__(x=int(self.label.x-self.label.content_width//2), y=int(self.label.bottom), width=self.label.content_width, height=self.label.content_height)
+        
+        if click:
+            self.click = click
+
+        self.hover = False
+        
+    def on_mouse_motion(self, x, y, *a):
+        hit = self._check_hit(x, y)
+        if self.hover:
+            if not hit:
+                self.hover=False
+                self.label.color=255,255,255,127
+                
+        else:
+            if hit:
+                self.hover=True
+                self.label.color=255,255,255,255
+
+    def on_mouse_press(self, x, y, *a):
+        if self.hover:            
+            self.click()
+    
+    def delete(self):
+        self.label.delete()
+        
 
 class WelcomeScreen(GameMode):
     def __init__(self, window):
         self.window=window
-
-        self.window.push_handlers(self)
 
     def on_draw(self, *a):       
         self.window.clear()
@@ -684,33 +715,36 @@ class WelcomeScreen(GameMode):
             self.exit()
         return True
 
-    def on_mouse_press(self, *a):
-        self.exit()
-        return True
-
     def exit(self):
-        self.label.text="One sec ..."
+        self.label.label.text="One sec ..."        
         
         self.on_draw()
         self.window.flip()
         
         self.window.pop_handlers()
+        self.window.pop_handlers()
 
         camera = FPSCamera(self.window, position=Vec3(0.0, .5, 5.0))
         mode = Game(self.window, camera)
+        mode.enter()
+
+        camera._exclusive_mouse=True
+        self.window.set_exclusive_mouse(True)
 
         self.label.delete()
 
-        mode.enter()
-
     def enter(self):
-        self.label = pyglet.text.Label("Click or tap to start", 
+        self.label = ClickLabel(
+            "Click here to start",
             font_name="Press Start",
             x=self.window.width//2, y=self.window.height//2,
-            font_size=16, color=(210, 210, 210, 255), anchor_x='center',
-            anchor_y='center',
-            batch=self.window.batch2d
-        )   
+            window=self.window,
+            font_size=16, color=(255, 255, 255, 127),
+            click = self.exit
+        )
+
+        self.window.push_handlers(self.label)
+        self.window.push_handlers(self)
 
 
 def main():
