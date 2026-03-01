@@ -503,15 +503,12 @@ class FPSCamera:
 
     def on_mouse_scroll(self, x, y, scroll_x, scroll_y):
         self.field_of_view = clamp(self.field_of_view - scroll_y*5, 10, 60 )
+        self.look_speed = clamp(self.look_speed - scroll_y*5, 10, 50 )
 
     def on_mouse_motion(self, x: int, y: int, dx: int, dy: int) -> None:
         if not self._exclusive_mouse:
             return
-        
-        ratio = 1-((61-self.field_of_view)/90)
-        print (ratio)
-
-        self.mouse_look = Vec2(dx*ratio, dy*ratio)
+        self.mouse_look = Vec2(dx, dy)
 
     def on_mouse_press(self, x: int, y: int, button, modifiers) -> None:
         if not self._exclusive_mouse:
@@ -549,7 +546,8 @@ class FPSCamera:
             return pyglet.event.EVENT_HANDLED
         
         if mod == pyglet.window.key.MOD_CAPSLOCK:
-            self.field_of_view = 60 if self.field_of_view==12 else 12
+            self.look_speed = 10 if self.look_speed==50 else 50
+            self.field_of_view = 10 if self.field_of_view==60 else 60
             return pyglet.event.EVENT_HANDLED
         
         return False
