@@ -14,4 +14,5 @@ shmup = "shmup.main:main"
 
 [tool.pydeploy]
 data_dirs = [["data", "data"]]
-omit_files = ["libs/app/pyglet/**/x11", "libs/app/pyglet/**/xlib", "libs/app/pyglet/**/wayland", "libs/app/pyglet/**/cocoa","libs/app/pyglet/**/linux", "libs/app/pyglet/**/macos", "libs/app/pyglet/**/darwin","libs/app/pyglet/**/openal","libs/app/pyglet/**/xaudio","libs/app/pyglet/**/pulse","libs/app/pyglet/**/experimental", "libs/app/pyglet/**/*.pyi", "libs/app/pyglet/**/*.typed"]
+omit_files = ["libs/libcrypto*.*","libs/*sqlite*","libs/libssl*"]
+omit_from_stdlib = ["pydoc_data*","unittest*","email*","asyncio*","mailbox*","pdb*","pydoc*","_pyrepl*","multi*","sqlite*","xml*","_pyexpat*","_ssl*"]
