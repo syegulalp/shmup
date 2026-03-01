@@ -76,6 +76,9 @@ class Figure:
     _size:float
     _vlist:object
 
+    _window:Window
+    _game:Game
+
     def update(self):
         self.matrix = Mat4().translate(self.pos) @ self._rotation
 
@@ -86,7 +89,7 @@ class Figure:
         self.pop_space()
         self.pos = pos
         self.matrix = Mat4.from_translation(Vec3(pos.x, self._size/2, pos.z))
-        game.space[(pos.x, 0, pos.z)]=self
+        self._game.space[(pos.x, 0, pos.z)]=self
         self.set_min_max()
         self._halfsize = self._size/2
 
@@ -99,19 +102,19 @@ class Figure:
         raise NotImplementedError
     
     def pop_space(self):
-        game.space.pop(
+        self._game.space.pop(
             (round(self.pos.x), round(self.pos.y), round(self.pos.z)), None
         )
     def delete(self):
         self.pop_space()
         self._vlist.delete() # type: ignore
 
-    def set_random_position(self):
+    def set_random_position(self, camera):
         while True: 
             x, z = random.randint(-24,25), random.randint(-24,25)
             if abs(x-camera.position.x)+abs(z-camera.position.y)<2:
                 continue
-            if game.space.get((x, 0, z), None) is None:
+            if self._game.space.get((x, 0, z), None) is None:
                 self.set_pos(Vec3(x, self._size/2, z))
                 break
 
@@ -119,7 +122,7 @@ class Cube(pyglet.model.Cube, Figure):
     def __init__(self, *a, **ka):
         size = random.choice(self.scales)
         color = random.choice(self.colors)
-        super().__init__(size, size, size, color=color, batch=window.batch, group=window.group)
+        super().__init__(size, size, size, color=color, batch=self._window.batch, group=self._window.group)
         self._size = size
         self._halfsize = size/2
         self.pos = Vec3()
@@ -135,7 +138,7 @@ class Cube(pyglet.model.Cube, Figure):
     
 class Shot(pyglet.model.Cube, Figure):
     def __init__(self, *a, camera:FPSCamera, **ka):
-        super().__init__(.05, .05, 1, (255,255,255,255), batch=window.batch, group=window.group)
+        super().__init__(.05, .05, 1, (255,255,255,255), batch=self._window.batch, group=self._window.group)
         self._size = .1
         self.pos = Vec3(*camera.position) * Vec3(1,0.75,1)
         self._move = camera._forward*.25
@@ -152,7 +155,7 @@ class Sphere(pyglet.model.Sphere, Figure):
     def __init__(self, *a, **ka):
         size = random.choice(self.scales)
         color = random.choice(self.colors)
-        super().__init__(size, color=color, batch=window.batch, group=window.group)
+        super().__init__(size, color=color, batch=self._window.batch, group=self._window.group)
         self._size = size
         self._halfsize = size/2
         self.pos = Vec3()
@@ -160,20 +163,36 @@ class Sphere(pyglet.model.Sphere, Figure):
     def collide(self, other:Figure):
         return self.pos.distance(other.pos)<(self._halfsize+other._size/2)
 
-class Game:
+class GameMode:
+    space:dict
+
+class Game(GameMode):
     def __init__(self, window:Window, camera:FPSCamera):
         self.window = window
         self.camera = camera
+        
+        self.camera.game = self
+        Figure._game = self
 
         self.items = []
         self.shots = []
         self.new_shots = []
         self.space = {}
 
+        self.show_hud = True
+
         self.fire_timer = 0
         self.firing = False
 
-    def start(self):
+        self.oof_pos = Vec3()
+        
+        window.push_handlers(self)
+        if controllers := pyglet.input.get_controllers():
+            controller = controllers[0]
+            controller.open()
+            controller.push_handlers(camera)
+
+    def enter(self):
         for _ in range(200):
             item = Cube()
             self.items.append(item)
@@ -182,7 +201,7 @@ class Game:
             self.items.append(item)
 
         for item in self.items:
-            item.set_random_position()
+            item.set_random_position(self.camera)
 
         self.floor = pyglet.model.Cube(
                 50,1,50,
@@ -190,7 +209,14 @@ class Game:
                 batch=self.window.batch
             )
         self.floor.matrix += Mat4.from_translation(Vec3(0,-1,0))
-        self.camera.game = self
+
+        self.label = pyglet.text.Label("Shoot everything!", 
+            font_name="Press Start",
+            x=self.window.width//2, y=self.window.height-24,
+            font_size=16, color=(210, 210, 210, 255), anchor_x='center',
+            anchor_y='top',
+            batch=self.window.batch2d
+        )
 
     def do_shots(self):
         y:Figure
@@ -212,7 +238,7 @@ class Game:
                                 shot._timer=None
                                 random.choice(sounds.explosion).play()
                                 new = y.__class__()
-                                new.set_random_position()
+                                new.set_random_position(self.camera)
                                 self.items.append(new)
                                 break
                             
@@ -241,26 +267,48 @@ class Game:
             self.fire_timer-=1
 
     def do_collisions(self, movement:Vec3):
-        pos = camera.position
+        pos = self.camera.position
         n=0
         while n<10:
             pos += movement
             for a,b,c in rrr:
                 if i:=self.space.get((round(pos.x)+a, round(pos.y)+b, round(pos.z)+c),None):
                     if i.pos.distance(pos)<i._size:
-                        pos -= movement * (n+5)
+                        pos -= movement                     
                         n=10
-                        sounds.oof.play()
+                        if self.oof_pos != pos:
+                            sounds.oof.play()
+                        self.oof_pos = Vec3(*pos)
                         break
             n+=1
-        camera.position = pos
-        gc.enable()
+        self.camera.position = pos
+        
 
     def ground_check(self):
         if self.camera.position.y<.5:
             self.camera.position += Vec3(0,.5-self.camera.position.y,0)
         elif self.camera.position.y>.5:
             self.camera.position -= Vec3(0,self.camera.position.y-.5,0)
+        gc.enable()
+
+    def on_draw(self, *a):
+        w = self.window
+        w.clear()
+        w.projection=w.projection_3d
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_CULL_FACE)
+        w.batch.draw()
+        
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_CULL_FACE)
+        w.view = w.view_2d
+        w.projection=w.projection_2d
+        w.batch2d.draw()
+
+        # if self.show_hud:
+        #     fps.draw()
+        #     fps2.draw()
+        #     fps3.draw()        
 
 class FPSCamera:
     UP = Vec3(0.0, 1.0, 0.0)
@@ -328,6 +376,7 @@ class FPSCamera:
         self.teleport(position, target)
 
         window.push_handlers(self)
+        self._update_projection()
 
     @property
     def pitch(self) -> float:
@@ -467,12 +516,14 @@ class FPSCamera:
 
         elif symbol == pyglet.window.key.Z:
             self.game.firing = True
+            return pyglet.event.EVENT_HANDLED
 
         elif symbol == pyglet.window.key.TAB:
-            window.show_hud = not window.show_hud
-            
+            self.show_hud = not self.show_hud
+            return pyglet.event.EVENT_HANDLED
         
         return False
+
 
     def on_key_release(self, symbol: int, mod: int) -> bool:
         if direction := self.input_map.get(symbol):
@@ -485,6 +536,7 @@ class FPSCamera:
         
         if symbol == pyglet.window.key.Z:
             self.game.firing = False
+            return pyglet.event.EVENT_HANDLED
 
         return False
 
@@ -508,14 +560,13 @@ class FPSCamera:
             self._elevation = value
 
     def _update_projection(self):
-        self._window.projection_2d = Mat4.orthogonal_projection(0, window.width, 0, window.height, -1, 1)
+        self._window.projection_2d = Mat4.orthogonal_projection(0, self._window.width, 0, self._window.height, -1, 1)
         self._window.projection_3d = Mat4.perspective_projection(
-            window.aspect_ratio,
-            z_near=camera.near,
-            z_far=camera.far,
-            fov=camera.field_of_view,
+            self._window.aspect_ratio,
+            z_near=self.near,
+            z_far=self.far,
+            fov=self.field_of_view,
         )
-        
 
 class Window(pyglet.window.Window):
     def __init__(self, *a, **ka):
@@ -523,7 +574,6 @@ class Window(pyglet.window.Window):
             sample_buffers=1, samples=8, depth_size=24,
             double_buffer=True,
             debug=False,
-            # vsync=False
         )
         
         super().__init__(*a, resizable=True, config=config, **ka)
@@ -539,37 +589,10 @@ class Window(pyglet.window.Window):
         self.group = pyglet.graphics.Group()
         self.batch = pyglet.graphics.Batch()
         self.batch2d = pyglet.graphics.Batch()
-        self.projection_2d: Mat4
-        self.projection_3d: Mat4
-
-        self.show_hud = True
+        self.projection_2d = Mat4.orthogonal_projection(0, self.width, 0, self.height, -1, 1)
+        self.projection_3d = Mat4()
 
         pyglet.font.load("Press Start")
-
-        self.label = pyglet.text.Label("Hello World", 
-                                       font_name="Press Start",
-                                       x=self.width//2, y=self.height-24, font_size=16, color=(210, 210, 210, 255), anchor_x='center',
-                                       anchor_y='top',
-                                       batch=self.batch2d)
-
-    def on_draw(self, *a):
-        self.clear()
-        
-        self.projection=self.projection_3d
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_CULL_FACE)
-        self.batch.draw()
-        
-        glDisable(GL_DEPTH_TEST)
-        glDisable(GL_CULL_FACE)
-        self.view = self.view_2d
-        self.projection=self.projection_2d
-        self.batch2d.draw()
-
-        if self.show_hud:
-            fps.draw()
-            fps2.draw()
-            fps3.draw()
 
 
 class FPSDisplay:
@@ -617,29 +640,61 @@ class FPSDisplay:
         self.label.draw()
 
 
-window:Window
-camera:FPSCamera
-game:Game
+class WelcomeScreen(GameMode):
+    def __init__(self, window):
+        self.window=window
+
+        self.window.push_handlers(self)
+
+    def on_draw(self, *a):       
+        self.window.clear()
+        self.window.batch2d.draw()
+        return True
+
+    def on_key_press(self, symbol: int, mod: int) -> bool:
+        if symbol == pyglet.window.key.SPACE:
+            self.exit()
+        return True
+
+    def on_mouse_press(self, *a):
+        self.exit()
+        return True
+
+    def exit(self):
+        self.label.text="One sec ..."
+        
+        self.on_draw()
+        self.window.flip()
+        
+        self.window.pop_handlers()
+
+        camera = FPSCamera(self.window, position=Vec3(0.0, .5, 5.0))
+        mode = Game(self.window, camera)
+
+        self.label.delete()
+
+        mode.enter()
+
+    def enter(self):
+        self.label = pyglet.text.Label("Click or tap to start", 
+            font_name="Press Start",
+            x=self.window.width//2, y=self.window.height//2,
+            font_size=16, color=(210, 210, 210, 255), anchor_x='center',
+            anchor_y='center',
+            batch=self.window.batch2d
+        )   
+
 
 def main():
-    global window, camera, fps, fps2, fps3, game
-
     window = Window()
-    camera = FPSCamera(window, position=Vec3(0.0, .5, 5.0))
-    game = Game(window,camera)
+    Figure._window = window
+    mode = WelcomeScreen(window)
 
-    fps, game.do_collisions = FPSDisplay.hook(game.do_collisions, label="Collisions")
-    fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=40, label="Shots")
-    fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=72, label="Draw time")
+    # fps, game.do_collisions = FPSDisplay.hook(game.do_collisions, label="Collisions")
+    # fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=40, label="Shots")
+    # fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=72, label="Draw time")
 
-    if controllers := pyglet.input.get_controllers():
-        controller = controllers[0]
-        controller.open()
-        controller.push_handlers(camera)
-    
-    gc.freeze()
-
-    game.start()
+    mode.enter()
 
     window.set_visible(True)
     window.flip()
@@ -648,3 +703,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
