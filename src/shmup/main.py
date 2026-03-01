@@ -7,19 +7,17 @@ pyglet.options.vsync=False
 import weakref
 import gc
 
-from math import radians, degrees, floor, ceil, sin, cos
+from math import radians, degrees
 
 from pyglet.gl import glEnable, glDisable, GL_DEPTH_TEST, GL_CULL_FACE, Config
 from pyglet.math import Vec2, Vec3, Mat4, clamp
 from pyglet.window import key as _key
 
-from time import perf_counter
 from itertools import product
 from collections import deque
 from typing import Callable
 from statistics import mean
 from time import monotonic
-
 
 from pyglet import resource
 import os
@@ -173,6 +171,7 @@ class Game(GameMode):
         
         self.camera.game = self
         Figure._game = self
+        Figure._window = window
 
         self.items = []
         self.shots = []
@@ -186,11 +185,22 @@ class Game(GameMode):
 
         self.oof_pos = Vec3()
         
-        window.push_handlers(self)
         if controllers := pyglet.input.get_controllers():
             controller = controllers[0]
             controller.open()
             controller.push_handlers(camera)
+        
+        self.fps1, self.do_collisions = FPSDisplay.hook(self.do_collisions, label="Collisions")
+        self.fps2, self.do_shots = FPSDisplay.hook(self.do_shots, y=40, label="Shots")
+        self.fps3, self.on_draw_ = FPSDisplay.hook(self.on_draw_,y=72, label="Draw time")
+
+        self.fps = (self.fps1, self.fps2, self.fps3)
+
+        # self.on_draw is a method pushed as a handler, so we cannot wrap it directly.
+        # This is a Pyglet behavior, not a Python thing!
+
+        window.push_handlers(self)
+
 
     def enter(self):
         for _ in range(200):
@@ -292,6 +302,9 @@ class Game(GameMode):
         gc.enable()
 
     def on_draw(self, *a):
+        return self.on_draw_(self, *a)
+
+    def on_draw_(self, *a):
         w = self.window
         w.clear()
         w.projection=w.projection_3d
@@ -305,10 +318,8 @@ class Game(GameMode):
         w.projection=w.projection_2d
         w.batch2d.draw()
 
-        # if self.show_hud:
-        #     fps.draw()
-        #     fps2.draw()
-        #     fps3.draw()        
+        if self.show_hud:
+            for _ in self.fps: _.draw()
 
 class FPSCamera:
     UP = Vec3(0.0, 1.0, 0.0)
@@ -686,13 +697,8 @@ class WelcomeScreen(GameMode):
 
 
 def main():
-    window = Window()
-    Figure._window = window
+    window = Window()    
     mode = WelcomeScreen(window)
-
-    # fps, game.do_collisions = FPSDisplay.hook(game.do_collisions, label="Collisions")
-    # fps2, game.do_shots = FPSDisplay.hook(game.do_shots, y=40, label="Shots")
-    # fps3, window.on_draw = FPSDisplay.hook(window.on_draw,y=72, label="Draw time")
 
     mode.enter()
 
