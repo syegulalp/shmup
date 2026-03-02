@@ -51,6 +51,7 @@ class sounds:
 
 r = (-1,0,1)
 rrr = tuple(product(r,r,r))
+r2 = (0,1,)
 
 import random
 
@@ -137,7 +138,7 @@ class Cube(pyglet.model.Cube, Figure):
 class Shot(pyglet.model.Cube, Figure):
     def __init__(self, *a, camera:FPSCamera, **ka):
         super().__init__(.05, .05, 1, (255,255,255,255), batch=self._window.batch, group=self._window.group)
-        self._size = .1
+        self._size = .05
         self.pos = Vec3(*camera.position) * Vec3(1,0.75,1)
         self._move = camera._forward*.25
         self._rotation = Mat4().rotate(
@@ -147,7 +148,7 @@ class Shot(pyglet.model.Cube, Figure):
             ).rotate(radians(45),Vec3(0,0,1)) 
         self._timer = 200
         self.matrix = Mat4().translate(self.pos) @ self._rotation
-        self._halfsize = .05
+        self._halfsize = .025
 
 class Sphere(pyglet.model.Sphere, Figure):
     def __init__(self, *a, **ka):
@@ -159,7 +160,7 @@ class Sphere(pyglet.model.Sphere, Figure):
         self.pos = Vec3()
 
     def collide(self, other:Figure):
-        return self.pos.distance(other.pos)<(self._halfsize+other._size/2)
+        return self.pos.distance(other.pos)<(self._halfsize+other._halfsize)
 
 class GameMode:
     space:dict
@@ -176,6 +177,7 @@ class Game(GameMode):
         self.items = []
         self.shots = []
         self.new_shots = []
+        self.dead_shots = []
         self.space = {}
 
         self.show_hud = True
@@ -240,10 +242,13 @@ class Game(GameMode):
     def do_shots(self):
         y:Figure
         gc.disable()
+        for shot in self.dead_shots:
+            shot._vlist.delete()
+        self.dead_shots[:] = []
         if self.shots:
             self.new_shots[:] = []
             for shot in self.shots:
-                for _ in range(0,2):
+                for _ in (0,1):
                     if shot.pos.y<0:
                         shot._timer=None
                         sounds.dud.play()
@@ -253,7 +258,6 @@ class Game(GameMode):
                         if y:=self.space.get((lx, ly, lz), None):  # type: ignore
                             if y.collide(shot):
                                 y.delete()
-                                # self.space.pop((lx, ly, lz))
                                 shot._timer=None
                                 random.choice(sounds.explosion).play()
                                 new = y.__class__()
@@ -268,11 +272,11 @@ class Game(GameMode):
                             shot._timer = None
                             break
                 
+                shot.update()
                 if shot._timer:
-                    shot.update()
                     self.new_shots.append(shot)
                 else:
-                    shot._vlist.delete()
+                    self.dead_shots.append(shot)
             self.shots[:] = self.new_shots
             self.new_shots[:] = []
 
@@ -289,15 +293,17 @@ class Game(GameMode):
         pos = Vec3(*self.camera.position)
         for _ in range(10):
             pos += movement
+            test = pos + Vec3(0,-.4,0)
             for a,b,c in rrr:
-                if i:=self.space.get((round(pos.x)+a, round(pos.y)+b, round(pos.z)+c),None):
-                    if i.pos.distance(pos)<i._size:
+                if i:=self.space.get((round(test.x)+a, round(test.y)+b, round(test.z)+c),None):
+                    if i.pos.distance(test)<i._size:
                         pos -= movement
                         if self.oof_pos != pos:
                             sounds.oof.play()
                         self.oof_pos = Vec3(*pos)
-                        return 
-            self.camera.position = pos
+                        self.camera.position = pos
+                        return                     
+        self.camera.position = pos
 
     def ground_check(self):
         if self.camera.position.y<.5:
@@ -672,8 +678,6 @@ class ClickLabel(pyglet.gui.WidgetBase):
         
         self.label = pyglet.text.Label(text,font_name = font_name, font_size=font_size, color=color, x=x, y=y, batch=self.window.batch2d, group=self.window.group1, anchor_x="center", anchor_y="center", width=self.window.width, multiline=True, align="center")
 
-        print (self.label.content_width, self.label.content_height)
-        
         super().__init__(x=int(self.label.x-self.label.content_width//2), y=int(self.label.bottom), width=self.label.content_width, height=self.label.content_height)
         
         if click:
